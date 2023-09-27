@@ -52,6 +52,19 @@ void initState() {
 
 ## Usage
 
+## Controllers
+
+```dart
+  QuillToolbar.basic(
+                  controller: _controller,
+                  embedButtons: FlutterQuillEmbeds.buttons(
+                    showCameraButton: false,
+                    showVideoButton: false,
+                    showFormulaButton: false,
+                    onImagePickCallback: _onImagePickCallback,
+                  )),
+```
+
 ```dart
         Flexible(
                 child: QuillEditor(
