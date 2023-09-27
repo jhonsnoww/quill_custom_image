@@ -1,12 +1,16 @@
+## add Git repo to your .yaml file like this
 
+```dart
+ quill_custom_image:
+    git:
+      url: https://github.com/jhonsnoww/quill_custom_image.git
+```
 
 ## import package
 ```dart
 import 'package:quill_custom_image/quill_custom_image.dart
 ```
 # How to Delete an Image
-
-The following code snippet demonstrates how to use the `flutter_quill` package to listen to document changes and perform operations when image is deleted. It also logs information about deleted content, including images.
 
 ```dart
 void initState() {
@@ -17,7 +21,6 @@ void initState() {
       final baseDoc = _controller.document;
       final dl = baseDoc.toDelta().diff(event.before);
 
-      // Log information about deleted content
       dl.map(
         (p0) {
           // Log if content is deleted or inserted
@@ -27,13 +30,11 @@ void initState() {
         },
       ).toList();
 
-      // Extract and log image information if available
       var imgMap = dl.toJson().last;
       if (imgMap != null && imgMap['insert']['image'] != null) {
         log('imgMap : ${imgMap['insert']['image']}');
       }
 
-      // Log the entire Delta as JSON
       log('dl : ${json.encode(dl.toJson())}');
       //TODO: Delete Here
     } catch (e) {
