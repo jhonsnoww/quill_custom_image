@@ -1,0 +1,309 @@
+import 'dart:developer';
+import 'dart:io';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_quill/extensions.dart' as base;
+import 'package:flutter_quill/flutter_quill.dart' hide Text;
+import 'package:flutter_quill/translations.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
+import 'package:math_keyboard/math_keyboard.dart';
+import 'package:universal_html/html.dart' as html;
+
+import '../shims/dart_ui_fake.dart'
+    if (dart.library.html) '../shims/dart_ui_real.dart' as ui;
+import 'utils.dart';
+import 'widgets/image.dart';
+import 'widgets/video_app.dart';
+import 'widgets/youtube_video_app.dart';
+
+class ImageEmbedBuilder extends EmbedBuilder {
+  @override
+  String get key => BlockEmbed.imageType;
+
+  @override
+  bool get expanded => false;
+
+  @override
+  Widget build(
+    BuildContext context,
+    QuillController controller,
+    base.Embed node,
+    bool readOnly,
+    bool inline,
+    TextStyle textStyle,
+  ) {
+    assert(!kIsWeb, 'Please provide image EmbedBuilder for Web');
+
+    var image;
+    final imageUrl = standardizeImageUrl(node.value.data);
+    OptionalSize? _imageSize;
+    final style = node.style.attributes['style'];
+    if (base.isMobile() && style != null) {
+      final _attrs = base.parseKeyValuePairs(style.value.toString(), {
+        Attribute.mobileWidth,
+        Attribute.mobileHeight,
+        Attribute.mobileMargin,
+        Attribute.mobileAlignment
+      });
+      if (_attrs.isNotEmpty) {
+        assert(
+            _attrs[Attribute.mobileWidth] != null &&
+                _attrs[Attribute.mobileHeight] != null,
+            'mobileWidth and mobileHeight must be specified');
+        final w = double.parse(_attrs[Attribute.mobileWidth]!);
+        final h = double.parse(_attrs[Attribute.mobileHeight]!);
+        _imageSize = OptionalSize(w, h);
+        final m = _attrs[Attribute.mobileMargin] == null
+            ? 0.0
+            : double.parse(_attrs[Attribute.mobileMargin]!);
+        final a = base.getAlignment(_attrs[Attribute.mobileAlignment]);
+        image = Padding(
+            padding: EdgeInsets.all(m),
+            child: imageByUrl(imageUrl, width: w, height: h, alignment: a));
+      }
+    }
+
+    if (_imageSize == null) {
+      image = imageByUrl(imageUrl);
+      _imageSize = OptionalSize((image as Image).width, image.height);
+    }
+
+    if (!readOnly && base.isMobile()) {
+      return Stack(
+        children: [
+          image,
+          Align(
+            alignment: Alignment.topRight,
+            child: Material(
+              type: MaterialType.transparency,
+              shape: const RoundedRectangleBorder(),
+              child: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  Future.delayed(const Duration(milliseconds: 50), () {
+                    final offset =
+                        getEmbedNode(controller, controller.selection.start)
+                            .offset;
+                    controller.replaceText(
+                        offset, 1, '', TextSelection.collapsed(offset: offset));
+                    log('controller.selection.baseOffset : ${controller.selection.baseOffset}');
+                  });
+                },
+              ),
+            ),
+          )
+        ],
+      );
+    }
+
+    if (!readOnly || !base.isMobile() || isImageBase64(imageUrl)) {
+      return image;
+    }
+
+    // We provide option menu for mobile platform excluding base64 image
+    return _menuOptionsForReadonlyImage(context, imageUrl, image);
+  }
+}
+
+class ImageEmbedBuilderWeb extends EmbedBuilder {
+  ImageEmbedBuilderWeb({this.constraints})
+      : assert(kIsWeb, 'ImageEmbedBuilderWeb is only for web platform');
+
+  final BoxConstraints? constraints;
+
+  @override
+  String get key => BlockEmbed.imageType;
+
+  @override
+  Widget build(
+    BuildContext context,
+    QuillController controller,
+    Embed node,
+    bool readOnly,
+    bool inline,
+    TextStyle textStyle,
+  ) {
+    final imageUrl = node.value.data;
+
+    ui.platformViewRegistry.registerViewFactory(imageUrl, (viewId) {
+      return html.ImageElement()
+        ..src = imageUrl
+        ..style.height = 'auto'
+        ..style.width = 'auto';
+    });
+
+    return ConstrainedBox(
+      constraints: constraints ?? BoxConstraints.loose(const Size(200, 200)),
+      child: HtmlElementView(
+        viewType: imageUrl,
+      ),
+    );
+  }
+}
+
+class VideoEmbedBuilder extends EmbedBuilder {
+  VideoEmbedBuilder({this.onVideoInit});
+
+  final void Function(GlobalKey videoContainerKey)? onVideoInit;
+
+  @override
+  String get key => BlockEmbed.videoType;
+
+  @override
+  Widget build(
+    BuildContext context,
+    QuillController controller,
+    base.Embed node,
+    bool readOnly,
+    bool inline,
+    TextStyle textStyle,
+  ) {
+    assert(!kIsWeb, 'Please provide video EmbedBuilder for Web');
+
+    final videoUrl = node.value.data;
+    if (videoUrl.contains('youtube.com') || videoUrl.contains('youtu.be')) {
+      return YoutubeVideoApp(
+          videoUrl: videoUrl, context: context, readOnly: readOnly);
+    }
+    return VideoApp(
+      videoUrl: videoUrl,
+      context: context,
+      readOnly: readOnly,
+      onVideoInit: onVideoInit,
+    );
+  }
+}
+
+class FormulaEmbedBuilder extends EmbedBuilder {
+  @override
+  String get key => BlockEmbed.formulaType;
+
+  @override
+  Widget build(
+    BuildContext context,
+    QuillController controller,
+    base.Embed node,
+    bool readOnly,
+    bool inline,
+    TextStyle textStyle,
+  ) {
+    assert(!kIsWeb, 'Please provide formula EmbedBuilder for Web');
+
+    final mathController = MathFieldEditingController();
+    return Focus(
+      onFocusChange: (hasFocus) {
+        if (hasFocus) {
+          // If the MathField is tapped, hides the built in keyboard
+          SystemChannels.textInput.invokeMethod('TextInput.hide');
+          debugPrint(mathController.currentEditingValue());
+        }
+      },
+      child: MathField(
+        controller: mathController,
+        variables: const ['x', 'y', 'z'],
+        onChanged: (value) {},
+        onSubmitted: (value) {},
+      ),
+    );
+  }
+}
+
+Widget _menuOptionsForReadonlyImage(
+    BuildContext context, String imageUrl, Widget image) {
+  return GestureDetector(
+      onTap: () {
+        showDialog(
+            context: context,
+            builder: (context) {
+              final saveOption = _SimpleDialogItem(
+                icon: Icons.save,
+                color: Colors.greenAccent,
+                text: 'Save'.i18n,
+                onPressed: () async {
+                  imageUrl = appendFileExtensionToImageUrl(imageUrl);
+
+                  // Download image
+                  final uri = Uri.parse(imageUrl);
+                  final response = await http.get(uri);
+                  if (response.statusCode != 200) {
+                    throw Exception(
+                      'failed to download image: ${response.statusCode}',
+                    );
+                  }
+
+                  // Save image to a temporary path
+                  final fileName = uri.pathSegments.isEmpty
+                      ? 'image.jpg'
+                      : uri.pathSegments.last;
+                  final imagePath =
+                      '${Directory.systemTemp.path}/menu-opt-$fileName';
+                  final imageFile = File(imagePath);
+                  await imageFile.writeAsBytes(response.bodyBytes);
+
+                  // Save image to gallery
+                  await Gal.putImage(imagePath);
+
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text('Saved'.i18n)));
+                  Navigator.pop(context);
+                },
+              );
+              final zoomOption = _SimpleDialogItem(
+                icon: Icons.zoom_in,
+                color: Colors.cyanAccent,
+                text: 'Zoom'.i18n,
+                onPressed: () {
+                  Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) =>
+                              ImageTapWrapper(imageUrl: imageUrl)));
+                },
+              );
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(50, 0, 50, 0),
+                child: SimpleDialog(
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(10))),
+                    children: [saveOption, zoomOption]),
+              );
+            });
+      },
+      child: image);
+}
+
+class _SimpleDialogItem extends StatelessWidget {
+  const _SimpleDialogItem(
+      {required this.icon,
+      required this.color,
+      required this.text,
+      required this.onPressed,
+      Key? key})
+      : super(key: key);
+
+  final IconData icon;
+  final Color color;
+  final String text;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialogOption(
+      onPressed: onPressed,
+      child: Row(
+        children: [
+          Icon(icon, size: 36, color: color),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 16),
+            child:
+                Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+}
