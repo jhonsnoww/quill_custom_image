@@ -11,6 +11,12 @@
 import 'package:quill_custom_image/quill_custom_image.dart
 ```
 # How to Delete an Image
+```dart
+ final QuillController _controller = QuillController.basic();
+  GlobalKey<EditorState>? editorKey = GlobalKey<EditorState>();
+
+```
+
 
 ```dart
 void initState() {
