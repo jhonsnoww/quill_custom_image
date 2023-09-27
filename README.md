@@ -50,7 +50,7 @@ void initState() {
 }
 ```
 
-## Usage
+Usage
 
 ## Controllers
 
@@ -64,6 +64,7 @@ void initState() {
                     onImagePickCallback: _onImagePickCallback,
                   )),
 ```
+Editor
 
 ```dart
         Flexible(
