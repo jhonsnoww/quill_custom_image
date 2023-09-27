@@ -41,13 +41,12 @@ void initState() {
     }
   });
 }
-'''
+```
 
 ## Usage
 
-'''dart
-
-            Flexible(
+```dart
+        Flexible(
                 child: QuillEditor(
                   controller: _controller,
                   embedBuilders: FlutterQuillEmbeds.builders(),
@@ -63,11 +62,11 @@ void initState() {
                 ),
               )
 
-'''
+```
 
 ### You can upload to server in this _onImagePickCallback method
 
-'''dart
+```dart
  Future<String> _onImagePickCallback(File file) async {
     final appDocDir = await getApplicationDocumentsDirectory();
     final copiedFile =
@@ -77,5 +76,5 @@ void initState() {
 
     return path;
   }
-'''
+```
 
